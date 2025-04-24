@@ -19,7 +19,7 @@ def save_subscriber(chat_id):
     if str(chat_id) not in subscribers:
         with open(SUBSCRIBERS_FILE, "a") as f:
             f.write(f"{chat_id}\n")
-        print(f"Добавлен новый подписчик: {chat_id}")
+        print(f"Добавлен подписчик: {chat_id}")
 
 def remove_subscriber(chat_id):
     subscribers = load_subscribers()
@@ -37,19 +37,19 @@ def send_quote():
     for chat_id in subscribers:
         try:
             bot.send_message(chat_id=chat_id, text=quote)
-            print(f"Цитата отправлена {chat_id}: {quote}")
+            print(f"✅ Цитата отправлена {chat_id}")
         except Exception as e:
-            print(f"Ошибка при отправке в {chat_id}: {e}")
+            print(f"⚠️ Ошибка при отправке {chat_id}: {e}")
 
 def start(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     save_subscriber(chat_id)
-    context.bot.send_message(chat_id=chat_id, text="✅ Вы подписались на StoicTalesBot. Цитаты будут приходить ежедневно.")
+    context.bot.send_message(chat_id=chat_id, text="✅ Вы подписаны на StoicTalesBot. Цитаты будут приходить ежедневно.")
 
 def stop(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     remove_subscriber(chat_id)
-    context.bot.send_message(chat_id=chat_id, text="❌ Вы отписались от StoicTalesBot.")
+    context.bot.send_message(chat_id=chat_id, text="❌ Вы отписались от рассылки StoicTalesBot.")
 
 if __name__ == '__main__':
     updater = Updater(token=TOKEN, use_context=True)
@@ -58,9 +58,9 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler("stop", stop))
 
     scheduler = BackgroundScheduler()
-    scheduler.add_job(send_quote, 'cron', hour=9, minute=0)
+    scheduler.add_job(send_quote, 'interval', minutes=1)  # <== каждая минута для теста
     scheduler.start()
 
-    print("Бот запущен. Ожидает команды и рассылает цитаты.")
+    print("✅ Бот запущен и слушает команды.")
     updater.start_polling()
     updater.idle()
