@@ -1,10 +1,8 @@
 from telegram import Bot
 from apscheduler.schedulers.blocking import BlockingScheduler
-from apscheduler.triggers.interval import IntervalTrigger
-import pytz
 import random
 
-# Твои данные (засветились ранее — позже лучше заменить токен)
+# Токен и ID (не забудь заменить, если обновлял токен)
 TOKEN = '7663921238:AAGZaEqkIjvadZE-2hbI2avn6a7asafZM8c'
 CHAT_ID = 328758295
 
@@ -23,7 +21,9 @@ def send_quote():
     bot = Bot(token=TOKEN)
     quote = random.choice(QUOTES)
     bot.send_message(chat_id=CHAT_ID, text=quote)
+    print("Цитата отправлена:", quote)  # ЭТО ВОТ ЭТА СТРОКА — она будет в логах Render
 
-scheduler = BlockingScheduler(timezone=pytz.utc)
-scheduler.add_job(send_quote, IntervalTrigger(minutes=1, timezone=pytz.utc))  # Тест: цитата каждую минуту
+scheduler = BlockingScheduler()
+scheduler.add_job(send_quote, 'interval', minutes=1)  # Каждую минуту для теста
+scheduler.start()
 scheduler.start()
