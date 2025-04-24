@@ -1,29 +1,66 @@
-from telegram import Bot
-from apscheduler.schedulers.blocking import BlockingScheduler
+from telegram import Bot, Update
+from telegram.ext import CommandHandler, Updater, CallbackContext
+from apscheduler.schedulers.background import BackgroundScheduler
+from stoic_quotes_100 import QUOTES
 import random
+import os
 
-# Токен и ID (не забудь заменить, если обновлял токен)
 TOKEN = '7663921238:AAGZaEqkIjvadZE-2hbI2avn6a7asafZM8c'
-CHAT_ID = 328758295
+SUBSCRIBERS_FILE = "subscribers.txt"
 
-QUOTES = [
-    "Жизнь не коротка, но мы делаем её таковой. — Сенека",
-    "Не вещи беспокоят людей, а мнение о вещах. — Эпиктет",
-    "Будь безупречен в настоящем. — Марк Аврелий",
-    "Пока мы откладываем жизнь, она проходит. — Сенека",
-    "Начни жить немедленно и считай каждый день за отдельную жизнь. — Сенека",
-    "Счастье — это не удовольствие, а свобода от страданий. — Эпиктет",
-    "Пока ты жив — учись жить. — Сенека",
-    "Ты поступаешь, как смертный, в том, чего боишься, и как бессмертный — в том, чего жаждешь. — Сенека"
-]
+def load_subscribers():
+    if not os.path.exists(SUBSCRIBERS_FILE):
+        return set()
+    with open(SUBSCRIBERS_FILE, "r") as f:
+        return set(line.strip() for line in f)
+
+def save_subscriber(chat_id):
+    subscribers = load_subscribers()
+    if str(chat_id) not in subscribers:
+        with open(SUBSCRIBERS_FILE, "a") as f:
+            f.write(f"{chat_id}\n")
+        print(f"Добавлен новый подписчик: {chat_id}")
+
+def remove_subscriber(chat_id):
+    subscribers = load_subscribers()
+    if str(chat_id) in subscribers:
+        subscribers.remove(str(chat_id))
+        with open(SUBSCRIBERS_FILE, "w") as f:
+            for sub in subscribers:
+                f.write(f"{sub}\n")
+        print(f"Удалён подписчик: {chat_id}")
 
 def send_quote():
     bot = Bot(token=TOKEN)
     quote = random.choice(QUOTES)
-    bot.send_message(chat_id=CHAT_ID, text=quote)
-    print("Цитата отправлена:", quote)  # ЭТО ВОТ ЭТА СТРОКА — она будет в логах Render
+    subscribers = load_subscribers()
+    for chat_id in subscribers:
+        try:
+            bot.send_message(chat_id=chat_id, text=quote)
+            print(f"Цитата отправлена {chat_id}: {quote}")
+        except Exception as e:
+            print(f"Ошибка при отправке в {chat_id}: {e}")
 
-scheduler = BlockingScheduler()
-scheduler.add_job(send_quote, 'interval', minutes=1)  # Каждую минуту для теста
-scheduler.start()
-scheduler.start()
+def start(update: Update, context: CallbackContext):
+    chat_id = update.effective_chat.id
+    save_subscriber(chat_id)
+    context.bot.send_message(chat_id=chat_id, text="✅ Вы подписались на StoicTalesBot. Цитаты будут приходить ежедневно.")
+
+def stop(update: Update, context: CallbackContext):
+    chat_id = update.effective_chat.id
+    remove_subscriber(chat_id)
+    context.bot.send_message(chat_id=chat_id, text="❌ Вы отписались от StoicTalesBot.")
+
+if __name__ == '__main__':
+    updater = Updater(token=TOKEN, use_context=True)
+    dispatcher = updater.dispatcher
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("stop", stop))
+
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(send_quote, 'cron', hour=9, minute=0)
+    scheduler.start()
+
+    print("Бот запущен. Ожидает команды и рассылает цитаты.")
+    updater.start_polling()
+    updater.idle()
