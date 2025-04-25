@@ -1,66 +1,64 @@
-from telegram import Bot, Update
-from telegram.ext import CommandHandler, Updater, CallbackContext
+
+import logging
+import os
+from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+)
 from apscheduler.schedulers.background import BackgroundScheduler
 from stoic_quotes_100 import QUOTES
 import random
-import os
 
-TOKEN = '7663921238:AAGZaEqkIjvadZE-2hbI2avn6a7asafZM8c'
-SUBSCRIBERS_FILE = "subscribers.txt"
+# Настройка логирования
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 
-def load_subscribers():
-    if not os.path.exists(SUBSCRIBERS_FILE):
-        return set()
-    with open(SUBSCRIBERS_FILE, "r") as f:
-        return set(line.strip() for line in f)
+# Получение переменных окружения
+TOKEN = os.getenv("BOT_TOKEN")
 
-def save_subscriber(chat_id):
-    subscribers = load_subscribers()
-    if str(chat_id) not in subscribers:
-        with open(SUBSCRIBERS_FILE, "a") as f:
-            f.write(f"{chat_id}\n")
-        print(f"Добавлен подписчик: {chat_id}")
+# Хранилище пользователей
+subscribers = set()
 
-def remove_subscriber(chat_id):
-    subscribers = load_subscribers()
-    if str(chat_id) in subscribers:
-        subscribers.remove(str(chat_id))
-        with open(SUBSCRIBERS_FILE, "w") as f:
-            for sub in subscribers:
-                f.write(f"{sub}\n")
-        print(f"Удалён подписчик: {chat_id}")
-
-def send_quote():
-    bot = Bot(token=TOKEN)
+# Рассылка цитаты
+async def send_quote_to_all(context: ContextTypes.DEFAULT_TYPE):
+    if not subscribers:
+        return
     quote = random.choice(QUOTES)
-    subscribers = load_subscribers()
     for chat_id in subscribers:
         try:
-            bot.send_message(chat_id=chat_id, text=quote)
-            print(f"✅ Цитата отправлена {chat_id}")
+            await context.bot.send_message(chat_id=chat_id, text=quote, parse_mode="HTML")
+            logging.info(f"Отправлена цитата пользователю {chat_id}: {quote}")
         except Exception as e:
-            print(f"⚠️ Ошибка при отправке {chat_id}: {e}")
+            logging.error(f"Ошибка при отправке цитаты пользователю {chat_id}: {e}")
 
-def start(update: Update, context: CallbackContext):
+# Команда подписки
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    save_subscriber(chat_id)
-    context.bot.send_message(chat_id=chat_id, text="✅ Вы подписаны на StoicTalesBot. Цитаты будут приходить ежедневно.")
+    subscribers.add(chat_id)
+    await update.message.reply_text("✅ Вы подписаны на стоические цитаты, которые будут приходить каждую минуту.")
 
-def stop(update: Update, context: CallbackContext):
+# Команда отписки
+async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    remove_subscriber(chat_id)
-    context.bot.send_message(chat_id=chat_id, text="❌ Вы отписались от рассылки StoicTalesBot.")
+    subscribers.discard(chat_id)
+    await update.message.reply_text("❌ Вы отписались от рассылки стоических цитат.")
 
-if __name__ == '__main__':
-    updater = Updater(token=TOKEN, use_context=True)
-    dispatcher = updater.dispatcher
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CommandHandler("stop", stop))
+# Инициализация и запуск бота
+if __name__ == "__main__":
+    application = ApplicationBuilder().token(TOKEN).build()
 
+    # Планировщик рассылки
     scheduler = BackgroundScheduler()
-    scheduler.add_job(send_quote, 'interval', minutes=1)  # <== каждая минута для теста
+    scheduler.add_job(send_quote_to_all, trigger='interval', minutes=1, args=[application])
     scheduler.start()
 
-    print("✅ Бот запущен и слушает команды.")
-    updater.start_polling()
-    updater.idle()
+    # Регистрация команд
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("stop", stop))
+
+    logging.info("Бот запущен...")
+    application.run_polling()
