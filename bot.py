@@ -1,11 +1,10 @@
 import logging
 import random
+import os
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from stoic_quotes_100 import QUOTES
-import os
-import asyncio  # Импортируем asyncio сразу!
 
 # Логирование
 logging.basicConfig(
@@ -39,13 +38,18 @@ async def send_quote_to_all(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Ошибка отправки цитаты в чат {chat_id}: {e}")
 
-async def main():
+# Главная функция
+def main():
     app = ApplicationBuilder().token(TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
+
     scheduler.add_job(send_quote_to_all, trigger="interval", minutes=1, args=[app])
     scheduler.start()
+
     logger.info("Бот запущен...")
-    await app.run_polling()
+
+    app.run_polling()  # ВНИМАНИЕ! БЕЗ await и без asyncio.run()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
