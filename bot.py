@@ -8,7 +8,7 @@ from stoic_quotes_100 import QUOTES
 
 # Логирование
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 # Переменные
 TOKEN = os.getenv("BOT_TOKEN")
 subscribers = set()
+
+# Планировщик (создаем, но не запускаем)
 scheduler = AsyncIOScheduler()
 
 # Команда /start
@@ -28,28 +30,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     logger.info(f"Новый подписчик: {chat_id}")
 
-# Рассылка цитат
+# Отправка цитат
 async def send_quote_to_all(context: ContextTypes.DEFAULT_TYPE):
     quote = random.choice(QUOTES)
     for chat_id in subscribers:
         try:
             await context.bot.send_message(chat_id=chat_id, text=quote, parse_mode='HTML')
-            logger.info(f"Цитата успешно отправлена в чат {chat_id}")
+            logger.info(f"Цитата отправлена: {quote}")
         except Exception as e:
-            logger.error(f"Ошибка отправки цитаты в чат {chat_id}: {e}")
+            logger.error(f"Ошибка отправки в чат {chat_id}: {e}")
 
 # Главная функция
-def main():
+async def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
 
+    # Запуск планировщика после старта приложения
     scheduler.add_job(send_quote_to_all, trigger="interval", minutes=1, args=[app])
     scheduler.start()
 
     logger.info("Бот запущен...")
-
-    app.run_polling()  # ВНИМАНИЕ! БЕЗ await и без asyncio.run()
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())
