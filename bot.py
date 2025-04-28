@@ -3,7 +3,6 @@ import random
 import os
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from stoic_quotes_100 import QUOTES
 
 # Логирование
@@ -17,42 +16,37 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
 subscribers = set()
 
-# Планировщик (создаем, но не запускаем)
-scheduler = AsyncIOScheduler()
-
 # Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     subscribers.add(chat_id)
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text="✅ Вы подписаны на стоические цитаты, которые будут приходить каждую минуту."
+    await update.message.reply_text(
+        "✅ Вы подписаны на стоические цитаты, которые будут приходить каждую минуту."
     )
     logger.info(f"Новый подписчик: {chat_id}")
 
 # Отправка цитат
-async def send_quote_to_all(context: ContextTypes.DEFAULT_TYPE):
-    quote = random.choice(QUOTES)
-    for chat_id in subscribers:
-        try:
-            await context.bot.send_message(chat_id=chat_id, text=quote, parse_mode='HTML')
-            logger.info(f"Цитата отправлена: {quote}")
-        except Exception as e:
-            logger.error(f"Ошибка отправки в чат {chat_id}: {e}")
+async def send_quote(context: ContextTypes.DEFAULT_TYPE):
+    if subscribers:
+        quote = random.choice(QUOTES)
+        for chat_id in subscribers:
+            try:
+                await context.bot.send_message(chat_id=chat_id, text=quote, parse_mode='HTML')
+                logger.info(f"Цитата отправлена в чат {chat_id}: {quote}")
+            except Exception as e:
+                logger.error(f"Ошибка отправки цитаты в чат {chat_id}: {e}")
 
 # Главная функция
-async def main():
+def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
 
-    # Запуск планировщика после старта приложения
-    scheduler.add_job(send_quote_to_all, trigger="interval", minutes=1, args=[app])
-    scheduler.start()
+    # Периодическая задача через встроенный планировщик Telegram бота
+    app.job_queue.run_repeating(send_quote, interval=60, first=10)
 
     logger.info("Бот запущен...")
-    await app.run_polling()
+    app.run_polling()
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()
