@@ -1,52 +1,111 @@
-import logging
-import random
 import os
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+import random
+from datetime import datetime, timedelta
+
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
 from stoic_quotes_100 import QUOTES
 
-# Логирование
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Переменные
-TOKEN = os.getenv("BOT_TOKEN")
-subscribers = set()
+TIMEZONES = {
+    "Лондон": 1,
+    "Рим": 2,
+    "Барселона": 2,
+    "Киев": 3,
+    "Москва": 3,
+    "Самара": 4,
+    "Тбилиси": 4
+}
 
-# Команда /start
+users = {}
+
+app = ApplicationBuilder().token(BOT_TOKEN).build()
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    subscribers.add(chat_id)
-    await update.message.reply_text(
-        "✅ Вы подписаны на стоические цитаты, которые будут приходить каждую минуту."
+    keyboard = [[city] for city in TIMEZONES.keys()]
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+
+    welcome_text = (
+        "⏰ Чтобы получать стоические цитаты ровно в 9 утра по вашему времени,\n"
+        "пожалуйста, выберите ближайший к вам город из списка ниже:"
     )
-    logger.info(f"Новый подписчик: {chat_id}")
 
-# Отправка цитат
-async def send_quote(context: ContextTypes.DEFAULT_TYPE):
-    if subscribers:
-        quote = random.choice(QUOTES)
-        for chat_id in subscribers:
+    await update.message.reply_text(welcome_text, reply_markup=reply_markup)
+
+async def handle_city_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_city = update.message.text
+    chat_id = update.message.chat_id
+
+    if user_city in TIMEZONES:
+        timezone = TIMEZONES[user_city]
+        users[chat_id] = timezone
+        await update.message.reply_text(
+            f"✅ Отлично! Теперь ты будешь получать цитаты каждый день в 9:00 утра по времени {user_city}."
+        )
+    else:
+        await update.message.reply_text(
+            "🚫 Пожалуйста, выбери город из списка, используя кнопки."
+        )
+
+async def set_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [[city] for city in TIMEZONES.keys()]
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+
+    await update.message.reply_text(
+        "🌍 Выберите новый город для корректного времени рассылки:",
+        reply_markup=reply_markup
+    )
+
+async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    if chat_id in users:
+        del users[chat_id]
+        await update.message.reply_text("🛑 Вы отписались от ежедневных рассылок цитат.")
+    else:
+        await update.message.reply_text("ℹ️ Вы ещё не были подписаны.")
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    help_text = (
+        "🤖 Этот бот присылает стоические цитаты каждый день в 9 утра по вашему времени.\n\n"
+        "📌 Команды:\n"
+        "/start — подписаться на рассылку\n"
+        "/stop — остановить рассылку\n"
+        "/setcity — изменить выбранный город\n"
+        "/help — показать это сообщение"
+    )
+    await update.message.reply_text(help_text)
+
+async def send_daily_quotes():
+    now_utc = datetime.utcnow()
+    for chat_id, timezone_offset in users.items():
+        user_time = now_utc + timedelta(hours=timezone_offset)
+        # !!! ВРЕМЕННО: отправлять цитату КАЖДУЮ минуту для теста !!!
+        if True:
+            quote = random.choice(QUOTES)
             try:
-                await context.bot.send_message(chat_id=chat_id, text=quote, parse_mode='HTML')
-                logger.info(f"Цитата отправлена в чат {chat_id}: {quote}")
+                await app.bot.send_message(chat_id=chat_id, text=quote, parse_mode="HTML")
+                print(f"Цитата отправлена пользователю {chat_id}")
             except Exception as e:
-                logger.error(f"Ошибка отправки цитаты в чат {chat_id}: {e}")
+                print(f"Ошибка отправки сообщения пользователю {chat_id}: {e}")
 
-# Главная функция
-def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+scheduler = AsyncIOScheduler()
+scheduler.add_job(send_daily_quotes, "interval", minutes=1)
+scheduler.start()
 
-    app.add_handler(CommandHandler("start", start))
-
-    # Периодическая задача через встроенный планировщик Telegram бота
-    app.job_queue.run_repeating(send_quote, interval=60, first=10)
-
-    logger.info("Бот запущен...")
-    app.run_polling()
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CommandHandler("setcity", set_city))
+app.add_handler(CommandHandler("stop", stop))
+app.add_handler(CommandHandler("help", help_command))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city_choice))
 
 if __name__ == "__main__":
-    main()
+    app.run_polling()
