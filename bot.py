@@ -76,20 +76,28 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "🤖 Этот бот присылает стоические цитаты каждый день в 9 утра по вашему времени.\n\n"
-        "📌 Команды:\n"
+        "📌 Доступные команды:\n"
         "/start — подписаться на рассылку\n"
         "/stop — остановить рассылку\n"
         "/setcity — изменить выбранный город\n"
+        "/share — поделиться ботом с друзьями\n"
         "/help — показать это сообщение"
     )
     await update.message.reply_text(help_text)
+
+async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    share_text = (
+        "📬 Хочешь поделиться стоической мудростью?\n\n"
+        "Отправь эту ссылку своим друзьям:\n"
+        "👉 https://t.me/StoicTalesBot"
+    )
+    await update.message.reply_text(share_text)
 
 async def send_daily_quotes():
     now_utc = datetime.utcnow()
     for chat_id, timezone_offset in users.items():
         user_time = now_utc + timedelta(hours=timezone_offset)
-        # !!! ВРЕМЕННО: отправлять цитату КАЖДУЮ минуту для теста !!!
-        if True:
+        if True:  # !!! Для теста отправляем КАЖДУЮ минуту !!!
             quote = random.choice(QUOTES)
             try:
                 await app.bot.send_message(chat_id=chat_id, text=quote, parse_mode="HTML")
@@ -105,6 +113,7 @@ app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("setcity", set_city))
 app.add_handler(CommandHandler("stop", stop))
 app.add_handler(CommandHandler("help", help_command))
+app.add_handler(CommandHandler("share", share))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_city_choice))
 
 if __name__ == "__main__":
