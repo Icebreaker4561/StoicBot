@@ -51,9 +51,13 @@ async def handle_city_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(
             f"✅ Отлично! Теперь ты будешь получать цитаты каждый день в 9:00 утра по времени {user_city}."
         )
+        await update.message.reply_text(
+            "🔔 Чтобы не пропустить цитаты, пожалуйста, проверь, что уведомления для этого бота включены.\n"
+            "Открой настройки чата и убедись, что звук уведомлений активен."
+        )
     else:
         await update.message.reply_text(
-            "🚫 Пожалуйста, выбери город из списка, используя кнопки."
+            "👇 Пожалуйста, выбери город из списка, используя кнопки ниже."
         )
 
 async def set_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -97,7 +101,7 @@ async def send_daily_quotes():
     now_utc = datetime.utcnow()
     for chat_id, timezone_offset in users.items():
         user_time = now_utc + timedelta(hours=timezone_offset)
-        if True:  # !!! Для теста отправляем КАЖДУЮ минуту !!!
+        if True:  # !!! Пока для теста: цитаты каждую минуту !!!
             quote = random.choice(QUOTES)
             try:
                 await app.bot.send_message(chat_id=chat_id, text=quote, parse_mode="HTML")
