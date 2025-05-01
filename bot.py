@@ -1,13 +1,17 @@
 import os
 import logging
 import random
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from datetime import time
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+)
+from telegram.ext import JobQueue
 from stoic_quotes_100 import QUOTES
 
-# Logging
+# Configure logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
@@ -17,95 +21,92 @@ logger = logging.getLogger(__name__)
 # Bot token
 TOKEN = os.getenv("BOT_TOKEN")
 
-# Subscribers: chat_id -> timezone string
+# Subscribers: chat_id -> timezone offset hours
 subscribers = {}
 
-# Mapping city names to timezones
-CITY_TZ = {
-    "Москва": "Europe/Moscow",
-    "Тбилиси": "Asia/Tbilisi",
-    "Рим": "Europe/Rome",
-    "Барселона": "Europe/Madrid",
-    "Лондон": "Europe/London",
-    "Киев": "Europe/Kyiv",
-    "Самара": "Europe/Samara"
-}
+# Weekly reflection text
+REFLECTION_TEXT = (
+    "🧘‍♂️ Стоическая неделя. Время для размышлений.\n"
+    "Эти вопросы не для галочки. Найдите пару минут тишины и честно ответьте:\n"
+    "1️⃣ В каких ситуациях на этой неделе я позволил эмоциям взять верх над разумом, и как мог бы отреагировать более мудро, мужественно, справедливо и умеренно?\n"
+    "2️⃣ Какие мои действия действительно соответствовали стоическим ценностям и принципам, а какие им противоречили?\n"
+    "3️⃣ Что из того, что я считал важным на этой неделе, действительно будет иметь значение через год?\n"
+    "4️⃣ Какие возможности послужить другим людям я упустил на этой неделе?\n"
+    "5️⃣ Какие препятствия и трудности этой недели я смог превратить в возможности для роста, а какие уроки упустил?"
+)
 
-# Scheduled job: runs every minute
-async def scheduled_task(context: ContextTypes.DEFAULT_TYPE):
-    for chat_id, tz_name in subscribers.items():
+async def send_quote(context: ContextTypes.DEFAULT_TYPE):
+    for chat_id, tz in subscribers.items():
         try:
-            tz = ZoneInfo(tz_name)
-            now = datetime.now(tz)
-            # Send quote at 09:00
-            if now.hour == 9 and now.minute == 0:
-                quote = random.choice(QUOTES)
-                await context.bot.send_message(chat_id, quote)
-                logger.info(f"Sent quote to {chat_id} at {now.time()} [{tz_name}]")
-            # Send reflection on Sunday (weekday=6) at 12:00
-            if now.weekday() == 6 and now.hour == 12 and now.minute == 0:
-                reflection = (
-                    "🧘‍♂️ Стоическая неделя. Время для размышлений.\n"
-                    "Эти вопросы не для галочки. Найди несколько минут тишины...\n"
-                    "1️⃣ В каких ситуациях я позволил эмоциям взять верх над разумом...\n"
-                    "2️⃣ Какие мои действия соответствовали стоическим ценностям...\n"
-                    "3️⃣ Что из того, что я считал важным на этой неделе,\n    будет иметь значение через год?\n"
-                    "4️⃣ Какие возможности послужить другим людям я упустил?\n"
-                    "5️⃣ Какие препятствия я смог превратить в рост,\n    а какие уроки упустил?"
-                )
-                await context.bot.send_message(chat_id, reflection)
-                logger.info(f"Sent reflection to {chat_id} at {now.time()} [{tz_name}]")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=random.choice(QUOTES),
+                parse_mode='HTML'
+            )
+            logger.info(f"Quote sent to {chat_id}")
         except Exception as e:
-            logger.error(f"Error scheduling for {chat_id}: {e}")
+            logger.error(f"Error sending quote to {chat_id}: {e}")
 
-# /start command: ask to choose city
+async def send_reflection(context: ContextTypes.DEFAULT_TYPE):
+    for chat_id, tz in subscribers.items():
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=REFLECTION_TEXT,
+                parse_mode='HTML'
+            )
+            logger.info(f"Reflection sent to {chat_id}")
+        except Exception as e:
+            logger.error(f"Error sending reflection to {chat_id}: {e}")
+
+# /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[city] for city in CITY_TZ.keys()]
+    chat_id = update.effective_chat.id
+    # Ask for timezone
+    keyboard = [['Москва'], ['Киев'], ['Тбилиси'], ['Самара']]
     await update.message.reply_text(
-        "Пожалуйста, выберите свой город из списка:",
+        "✅ Готово!\n"
+        "Теперь Вы будете получать одну мысль из стоицизма каждое утро в 9:00.\n\n"
+        "🔔 Убедитесь, что уведомления для этого бота включены, чтобы не пропустить сообщения.\n\n"
+        "Пожалуйста, укажите ваш город для определения часового пояса:",
         reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True)
     )
-    logger.info(f"Asking city for {update.effective_chat.id}")
+    logger.info(f"Started chat {chat_id}")
 
-# Handle city selection
-async def set_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    city = update.message.text.strip()
-    if city in CITY_TZ:
-        subscribers[chat_id] = CITY_TZ[city]
-        await update.message.reply_text(
-            f"✅ Готово!\nТеперь Вы будете получать одну мысль из стоицизма каждое утро в 9:00.\n"
-            f"\n🔔 Убедитесь, что уведомления для этого бота включены, чтобы не пропустить сообщения."
-        )
-        logger.info(f"Subscribed {chat_id} with TZ {CITY_TZ[city]}")
-    else:
-        await update.message.reply_text(
-            "Город не распознан, попробуйте еще раз."
-        )
-        logger.warning(f"Unknown city from {chat_id}: {city}")
-
-# /stop command: unsubscribe
+# /stop command
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if chat_id in subscribers:
-        subscribers.pop(chat_id, None)
+        subscribers.pop(chat_id)
         await update.message.reply_text("❌ Вы отписаны от рассылки.")
-        logger.info(f"Unsubscribed {chat_id}")
     else:
         await update.message.reply_text("Вы не были подписаны.")
 
-# Main function
+# City selection handler
+async def set_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    city = update.message.text.strip().lower()
+    tz_map = {'москва':+3, 'киев':+3, 'тбилиси':+4, 'самара':+4}
+    if city in tz_map:
+        subscribers[chat_id] = tz_map[city]
+        await update.message.reply_text(f"Город установлен: {city.capitalize()}. Рассылка активирована.")
+        logger.info(f"Chat {chat_id} set timezone {tz_map[city]}")
+    else:
+        await update.message.reply_text("Город не распознан, попробуйте ещё раз.")
+
+# Main entry point
 async def main():
     app = ApplicationBuilder().token(TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stop", stop))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, set_city))
-
-    app.job_queue.run_repeating(scheduled_task, interval=60, first=10)
-
+    app.add_handler(CommandHandler("setcity", set_city))
+    # Schedule daily quotes at 9:00
+    app.job_queue.run_daily(send_quote, time=time(hour=9, minute=0))
+    # Schedule weekly reflections on Sunday at 12:00
+    app.job_queue.run_daily(send_reflection, time=time(hour=12, minute=0), days=(6,))
+    # Run bot
     await app.run_polling()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
