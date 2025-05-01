@@ -1,17 +1,17 @@
+```python
 import os
 import logging
 import random
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ContextTypes,
     MessageHandler,
-    ConversationHandler,
     filters,
+    JobQueue,
 )
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from stoic_quotes_100 import QUOTES
 
 # Логирование
@@ -23,103 +23,111 @@ logger = logging.getLogger(__name__)
 
 # Переменные
 TOKEN = os.getenv("BOT_TOKEN")
-subscribers = {}
-
-# Стадии выбора города
-CITY, = range(1)
-
-# Доступные города и часовые пояса
-TIME_ZONES = {
-    'Москва': +3,
-    'Киев': +3,
-    'Тбилиси': +4,
-    'Самара': +4,
-    'Лондон': 0,
-    'Рим': +2,
-    'Барселона': +2,
+subscribers = {}  # chat_id -> timezone offset
+CITIES = {
+    "Moscow": 3,
+    "Samara": 4,
+    "Kiev": 2,
+    "Tbilisi": 4,
+    "Rome": 1,
+    "Barcelona": 2,
+    "London": 1,
 }
 
-# Функция отправки цитаты
-async def send_quote_job(chat_id, tz_offset, context):
-    quote = random.choice(QUOTES)
-    try:
-        await context.bot.send_message(chat_id=chat_id, text=quote, parse_mode='HTML')
-        logger.info(f"Цитата отправлена в {chat_id}")
-    except Exception as e:
-        logger.error(f"Ошибка при отправке цитаты: {e}")
+# Отправка цитаты
+async def send_quote(context: ContextTypes.DEFAULT_TYPE):
+    now_utc = datetime.utcnow()
+    for chat_id, tz in subscribers.items():
+        local_time = now_utc + timedelta(hours=tz)
+        if local_time.hour == 9 and local_time.minute == 0:
+            quote = random.choice(QUOTES)
+            try:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=quote,
+                    parse_mode='HTML'
+                )
+                logger.info(f"Цитата отправлена в {chat_id}")
+            except Exception as e:
+                logger.error(f"Ошибка при отправке цитаты в {chat_id}: {e}")
 
-# Функция отправки рефлексии
-REFLECTION = (
-    "🧘‍♂️ <b>Стоическая неделя. Время для размышлений.</b>\n"
-    "Эти вопросы не для галочки. Найди несколько минут тишины, чтобы честно взглянуть на прожитую неделю. Ответы не обязательны — но они могут многое изменить в твоей жизни.\n\n"
-    "1️⃣ В каких ситуациях на этой неделе я позволил эмоциям взять верх над разумом, и как мог бы отреагировать более мудро, мужественно, справедливо и умеренно?\n"
-    "2️⃣ Какие мои действия действительно соответствовали стоическим ценностям и принципам, а какие шли вразрез с ними?\n"
-    "3️⃣ Что из того, что я считал важным на этой неделе, действительно будет иметь значение через год?\n"
-    "4️⃣ Какие возможности послужить другим людям я упустил на этой неделе?\n"
-    "5️⃣ Какие препятствия и трудности этой недели я смог превратить в возможности для роста, а какие уроки упустил?"
-)
+# Отправка рефлексии по воскресеньям
+async def send_reflection(context: ContextTypes.DEFAULT_TYPE):
+    now_utc = datetime.utcnow()
+    if now_utc.weekday() == 6 and now_utc.hour == 12 and now_utc.minute == 0:
+        for chat_id in subscribers:
+            try:
+                text = (
+                    "🧘‍♂️ Стоическая неделя. Время для размышлений.\n\n"
+                    "Эти вопросы не для галочки. Найди несколько минут тишины, чтобы честно взглянуть на прожитую неделю. Ответы не обязательны — но они могут многое изменить в твоей жизни.\n\n"
+                    "1️⃣ В каких ситуациях я позволил эмоциям взять верх над разумом, и как мог бы отреагировать более мудро, мужественно, справедливо и умеренно?\n"
+                    "2️⃣ Какие мои действия действительно соответствовали стоическим ценностям и принципам, а какие шли вразрез с ними?\n"
+                    "3️⃣ Что из того, что я считал важным на этой неделе, действительно будет иметь значение через год?\n"
+                    "4️⃣ Какие возможности послужить другим людям я упустил на этой неделе?\n"
+                    "5️⃣ Какие препятствия и трудности этой недели я смог превратить в возможности для роста, а какие уроки упустил?"
+                )
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    parse_mode='HTML'
+                )
+                logger.info(f"Рефлексия отправлена в {chat_id}")
+            except Exception as e:
+                logger.error(f"Ошибка при отправке рефлексии в {chat_id}: {e}")
 
-async def send_reflection_job(chat_id, context):
-    try:
-        await context.bot.send_message(chat_id=chat_id, text=REFLECTION, parse_mode='HTML')
-        logger.info(f"Рефлексия отправлена в {chat_id}")
-    except Exception as e:
-        logger.error(f"Ошибка при отправке рефлексии: {e}")
-
-# /start
+# Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    reply_markup = ReplyKeyboardMarkup([list(TIME_ZONES.keys())], one_time_keyboard=True)
-    await update.message.reply_text(
-        'Пожалуйста, выберите город из списка:',
-        reply_markup=reply_markup
-    )
-    return CITY
-
-async def city_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    city = update.message.text
-    if city not in TIME_ZONES:
-        await update.message.reply_text('Город не распознан, попробуйте еще раз.')</code>
-        return CITY
-    tz = TIME_ZONES[city]
-    subscribers[chat_id] = tz
-    # Запланировать job
-    now = datetime.utcnow()
-    sched = context.job_queue
-    sched.run_daily(send_quote_job, time=time(0,0), days=(0,1,2,3,4,5,6), context=(chat_id, tz))
-    sched.run_weekly(send_reflection_job, time=time(0,0), day_of_week='sun', context=chat_id)
-
-    await update.message.reply_text(
-        '✅ Готово! Вы будете получать стоические цитаты каждый день в 9 утра по выбранному времени.\n'
-        '\n'
-        '🔔 Убедитесь, что уведомления от этого бота включены в настройках чата.'
+    # Предложим выбрать город
+    keyboard = ReplyKeyboardMarkup(
+        [[city] for city in CITIES.keys()],
+        one_time_keyboard=True,
+        resize_keyboard=True
     )
-    return ConversationHandler.END
+    await update.message.reply_text(
+        "Пожалуйста, выберите город для расчета времени рассылки:",
+        reply_markup=keyboard
+    )
 
-# /stop
+# Обработка выбора города
+async def set_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    city = update.message.text
+    chat_id = update.effective_chat.id
+    if city in CITIES:
+        subscribers[chat_id] = CITIES[city]
+        await update.message.reply_text(
+            "✅ Готово! Вы будете получать стоические цитаты каждый день в 9 утра по выбранному времени.\n"
+            "🔔 Telegram может по умолчанию отключать уведомления от ботов. Чтобы ничего не пропустить, включите уведомления для этого чата."
+        )
+        logger.info(f"Подписан: {chat_id}, город: {city}, TZ: {CITIES[city]}")
+    else:
+        await update.message.reply_text("Город не распознан, попробуйте еще раз.")
+
+# Команда /stop
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if chat_id in subscribers:
-        del subscribers[chat_id]
-        await update.message.reply_text('❌ Вы отписаны от рассылки.')
+        subscribers.pop(chat_id)
+        await update.message.reply_text("❌ Вы отписаны от рассылки.")
     else:
-        await update.message.reply_text('Вы не были подписаны.')
+        await update.message.reply_text("Вы не были подписаны.")
+    logger.info(f"Отписался: {chat_id}")
 
 # Главная функция
-def main():
+async def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
-        states={
-            CITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, city_chosen)]
-        },
-        fallbacks=[CommandHandler('stop', stop)]
-    )
-    app.add_handler(conv_handler)
-    app.add_handler(CommandHandler('stop', stop))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("stop", stop))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, set_city))
 
-    app.run_forever()
+    jq: JobQueue = app.job_queue
+    jq.run_repeating(send_quote, interval=30, first=5)
+    jq.run_repeating(send_reflection, interval=30, first=15)
 
-if __name__ == '__main__':
-    main()
+    await app.run_polling()
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
+```
