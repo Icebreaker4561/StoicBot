@@ -99,4 +99,3 @@ if __name__ == '__main__':
 
     # Запуск polling
     app.run_polling()
-```
