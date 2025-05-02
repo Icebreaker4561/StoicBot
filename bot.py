@@ -62,14 +62,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[c] for c in cities]
     reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text(
-    f"✅ Готово!
-"
-    f"Теперь Вы будете получать одну мысль от стоиков каждое утро в 9:00 по времени города ({city}).
-
-"
-    "🔔⚠️ Убедитесь, что уведомления для этого бота включены, чтобы не пропустить сообщения."
-)
-    logger.info(f"Prompted city selection for {chat_id}")
+        "Пожалуйста, выберите ближайший к вам город из списка ниже, чтобы установить часовой пояс 👇:",
+        reply_markup=reply_markup
+    )
+    logger.info(f"Prompted city selection for {chat_id}")(f"Prompted city selection for {chat_id}")
 
 # Handle city selection and subscribe
 async def setcity(update: Update, context: ContextTypes.DEFAULT_TYPE):
