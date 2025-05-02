@@ -67,20 +67,36 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Prompted city selection for {update.effective_chat.id}")
 
 # Handle city selection and subscribe
+# /setcity command: show city selection keyboard or process selection
 async def setcity(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    city = update.message.text.strip()
     chat_id = update.effective_chat.id
+    text = update.message.text.strip()
+    # If invoked via command, show keyboard
+    if text.lower() == '/setcity':
+        cities = ['Лермонтов', 'Батуми', 'Дюссельдорф', 'Киев', 'Барселона', 'Лиссабон']
+        keyboard = [[c] for c in cities]
+        reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        await update.message.reply_text(
+            "Пожалуйста, выберите ближайший к вам город из списка ниже, чтобы изменить часовой пояс 👇:",
+            reply_markup=reply_markup
+        )
+        return
+    # Otherwise process city selection
+    city = text
     valid = ['Лермонтов', 'Батуми', 'Дюссельдорф', 'Киев', 'Барселона', 'Лиссабон']
     if city not in valid:
         await update.message.reply_text("Город не распознан, попробуйте ещё раз.")
         return
     subscribers[chat_id] = city
     await update.message.reply_text(
-        f"✅ Готово!\n"
-        f"Теперь Вы будете получать одну мысль от стоиков каждое утро в 9:00 по времени города ({city}).\n\n"
+        f"✅ Готово!
+"
+        f"Теперь Вы будете получать одну мысль от стоиков каждое утро в 9:00 по времени города ({city}).
+
+"
         "🔔⚠️ Убедитесь, что уведомления для этого бота включены, чтобы не пропустить сообщения."
     )
-    logger.info(f"Subscribed {chat_id} for city {city}")
+    logger.info(f"Subscribed {chat_id} for city {city}")(f"Subscribed {chat_id} for city {city}")
 
 # /stop command: unsubscribe
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
