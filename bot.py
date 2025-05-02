@@ -1,63 +1,64 @@
+```python
 import os
 import logging
 import random
-import asyncio
 from datetime import time
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ContextTypes,
-    MessageHandler,
-    filters,
+    CallbackContext,
 )
 from stoic_quotes_100 import QUOTES
 
 # Логирование
 logging.basicConfig(
-    format="%(asctime)s – %(name)s – %(levelname)s – %(message)s",
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
 
-# Хранение подписчиков и их временных зон
-subscribers = {}  # chat_id -> timezone string, пока не используется
+# Список подписчиков
+subscribers = set()
 
-# Отправка цитаты
-async def send_quote(context: ContextTypes.DEFAULT_TYPE):
-    for chat_id in subscribers.keys():
-        quote = random.choice(QUOTES)
+# Функция отправки цитаты
+async def send_quote(context: CallbackContext):
+    for chat_id in subscribers:
         try:
-            await context.bot.send_message(chat_id, quote, parse_mode="HTML")
+            quote = random.choice(QUOTES)
+            await context.bot.send_message(chat_id, quote, parse_mode='HTML')
+            logger.info(f"Отправлена цитата в {chat_id}")
         except Exception as e:
             logger.error(f"Ошибка при отправке цитаты {chat_id}: {e}")
 
-# Отправка рефлексии
+# Функция отправки недельной рефлексии
 REFLECTION = (
     "🧘‍♂️ *Стоическая неделя*\n"
     "_Эти вопросы не для галочки. Найди несколько минут тишины._\n\n"
     "1️⃣ В каких ситуациях я позволил эмоциям взять верх над разумом?\n"
-    "2️⃣ Какие мои действия соответствовали стоическим ценностям, а какие — нет?\n"
+    "2️⃣ Какие мои действия соответствовали стоическим ценностям, а какие нет?\n"
     "3️⃣ Что из того, что я считал важным, будет иметь значение через год?\n"
     "4️⃣ Какие возможности помочь другим я упустил?\n"
     "5️⃣ Какие трудности этой недели я смог превратить в рост?"
 )
 
-async def send_reflection(context: ContextTypes.DEFAULT_TYPE):
-    for chat_id in subscribers.keys():
+async def send_reflection(context: CallbackContext):
+    for chat_id in subscribers:
         try:
             await context.bot.send_message(
                 chat_id,
                 REFLECTION,
-                parse_mode="Markdown"
+                parse_mode='Markdown'
             )
+            logger.info(f"Отправлена рефлексия в {chat_id}")
         except Exception as e:
             logger.error(f"Ошибка при отправке рефлексии {chat_id}: {e}")
 
-# /start
+# Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    subscribers[chat_id] = None  # можем позже сохранять часовой пояс
+    subscribers.add(chat_id)
     await update.message.reply_text(
         "✅ Готово!\n"
         "Теперь Вы будете получать одну мысль из стоицизма каждое утро в 9:00.\n\n"
@@ -65,40 +66,38 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     logger.info(f"Подписался: {chat_id}")
 
-# /stop
+# Команда /stop
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if chat_id in subscribers:
-        subscribers.pop(chat_id, None)
+        subscribers.remove(chat_id)
         await update.message.reply_text("❌ Вы отписаны.")
         logger.info(f"Отписался: {chat_id}")
     else:
         await update.message.reply_text("Вы и так не были подписаны.")
 
-# Главная точка входа
-def main():
-    token = os.getenv("BOT_TOKEN")
-    app = ApplicationBuilder().token(token).build()
+# Точка входа
+if __name__ == '__main__':
+    TOKEN = os.getenv('BOT_TOKEN')
+    app = ApplicationBuilder().token(TOKEN).build()
 
-    # Команды
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stop", stop))
+    # Регистрируем команды
+    app.add_handler(CommandHandler('start', start))
+    app.add_handler(CommandHandler('stop', stop))
 
-    # Ежедневные цитаты в 09:00
+    # Планировщик цитат: каждое утро в 9:00
     app.job_queue.run_daily(
         send_quote,
         time=time(hour=9, minute=0),
         days=(0,1,2,3,4,5,6),
     )
-    # Еженедельная рефлексия в воскресенье в 12:00
+    # Планировщик рефлексии: воскресенье в 12:00
     app.job_queue.run_daily(
         send_reflection,
         time=time(hour=12, minute=0),
         days=(6,),
     )
 
-    # Для Render: используем .run(), а не .run_polling()
-    app.run()
-
-if __name__ == "__main__":
-    main()
+    # Запуск polling
+    app.run_polling()
+```
