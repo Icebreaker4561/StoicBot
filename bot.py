@@ -1,139 +1,111 @@
-```python
 import os
 import logging
 import random
 from datetime import time
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 from stoic_quotes_100 import QUOTES
-import pytz
 
 # Логирование
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
+    level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Токен и хранилище подписчиков: chat_id -> tz
-TOKEN = os.getenv("BOT_TOKEN")
-subscribers: dict[int, str] = {}
+# Переменные пользователей: chat_id -> timezone string
+users_tz = {}
+subscribers = set()
 
-# Команды выбора городов и соответствующих часовых поясов
-CITIES = {
-    "Москва": "Europe/Moscow",
-    "Тбилиси": "Asia/Tbilisi",
-    "Рим": "Europe/Rome",
-    "Барселона": "Europe/Madrid",
-    "Лондон": "Europe/London",
-    "Киев": "Europe/Kiev",
-    "Самара": "Europe/Samara",
+# Доступные города и TZ
+CITY_TZ = {
+    'Москва': 'Europe/Moscow',
+    'Киев': 'Europe/Kiev',
+    'Тбилиси': 'Asia/Tbilisi',
+    'Рим': 'Europe/Rome',
+    'Барселона': 'Europe/Madrid',
+    'Самара': 'Europe/Samara'
 }
 
 # Отправка цитаты
 async def send_quote(context: ContextTypes.DEFAULT_TYPE):
-    for chat_id, tz in subscribers.items():
+    for chat_id in list(subscribers):
+        tz = users_tz.get(chat_id)
+        if not tz:
+            continue
+        quote = random.choice(QUOTES)
         try:
-            quote = random.choice(QUOTES)
-            await context.bot.send_message(chat_id, text=quote, parse_mode='HTML')
-            logger.info(f"Quote sent to {chat_id}")
+            await context.bot.send_message(chat_id=chat_id, text=quote, parse_mode='HTML')
         except Exception as e:
-            logger.error(f"Failed to send quote to {chat_id}: {e}")
+            logger.error(f"Ошибка при отправке цитаты {chat_id}: {e}")
 
 # Отправка рефлексии
 REFLECTION = (
-    "🧘‍♂️ *Стоическая неделя. Время для размышлений.*\n"
-    "_Эти вопросы не для галочки. Найди несколько минут тишины, чтобы честно взглянуть на прожитую неделю._\n\n"
-    "1️⃣ В каких ситуациях я позволил эмоциям взять верх над разумом, и как мог бы отреагировать более мудро?\n"
-    "2️⃣ Какие мои действия действительно соответствовали стоическим ценностям, а какие противоречили им?\n"
-    "3️⃣ Что из этой недели будет иметь значение через год?\n"
-    "4️⃣ Какие возможности послужить другим людям я упустил?\n"
-    "5️⃣ Какие препятствия стали возможностями для роста, а какие уроки упустил?"
+    "<b>🧘‍♂️ Стоическая неделя. Время для размышлений.</b>\n"
+    "<i>Эти вопросы не для галочки. Найди минуту тишины и честно ответь себе:</i>\n"
+    "1️⃣ В каких ситуациях эмоции брали верх и как мог отреагировать лучше?\n"
+    "2️⃣ Какие действия соответствовали стоицизму, а что противоречило принципам?\n"
+    "3️⃣ Что из этого важно через год?\n"
+    "4️⃣ Где упустил шанс помочь другим?\n"
+    "5️⃣ Какие трудности стали возможностью роста?"
 )
-
 async def send_reflection(context: ContextTypes.DEFAULT_TYPE):
-    for chat_id, tz in subscribers.items():
+    for chat_id in list(subscribers):
+        tz = users_tz.get(chat_id)
+        if not tz:
+            continue
         try:
-            await context.bot.send_message(chat_id, text=REFLECTION, parse_mode='MarkdownV2')
-            logger.info(f"Reflection sent to {chat_id}")
+            await context.bot.send_message(chat_id=chat_id, text=REFLECTION, parse_mode='HTML')
         except Exception as e:
-            logger.error(f"Failed to send reflection to {chat_id}: {e}")
+            logger.error(f"Ошибка при отправке рефлексии {chat_id}: {e}")
 
-# /start - выбор города
+# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[city] for city in CITIES]
-    reply = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    keyboard = [[city] for city in CITY_TZ]
     await update.message.reply_text(
-        "Пожалуйста, выберите город, чтобы установить ваш часовой пояс:",
-        reply_markup=reply,
+        'Пожалуйста, выберите ваш город:',
+        reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     )
-    logger.info(f"Asked {update.effective_chat.id} to choose city")
 
-# Обработка выбора города через MessageHandler
+# Обработка города
 async def set_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
     city = update.message.text
     chat_id = update.effective_chat.id
-    if city in CITIES:
-        tz = CITIES[city]
-        subscribers[chat_id] = tz
-        await update.message.reply_text(
-            "✅ Готово!\n"
-            "Теперь вы будете получать одну мысль из стоицизма каждое утро в 9:00 по вашему времени.\n\n"
-            "🔔 Убедитесь, что уведомления для этого бота включены, чтобы не пропустить сообщения.",
-            parse_mode='MarkdownV2',
-        )
-        logger.info(f"Subscribed {chat_id} with tz {tz}")
-    else:
-        await update.message.reply_text("Город не распознан, попробуйте ещё раз.")
+    tz = CITY_TZ.get(city)
+    if not tz:
+        await update.message.reply_text('Город не распознан, попробуйте ещё раз.')
+        return
+    users_tz[chat_id] = tz
+    subscribers.add(chat_id)
+    await update.message.reply_text(
+        '✅ Готово!\n'
+        'Теперь Вы будете получать одну мысль из стоицизма каждое утро в 9:00.\n\n'
+        '🔔 Убедитесь, что уведомления для этого бота включены, чтобы не пропустить сообщения.'
+    )
+    logger.info(f"Подписка: {chat_id}, TZ={tz}")
 
-# /stop - отписка
+# /stop
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    if chat_id in subscribers:
-        subscribers.pop(chat_id)
-        await update.message.reply_text("❌ Вы отписаны от рассылки.")
-        logger.info(f"Unsubscribed {chat_id}")
-    else:
-        await update.message.reply_text("Вы не были подписаны.")
-
-# Настройка расписания
-def schedule_jobs(app):
-    for chat_id, tz in subscribers.items():
-        timezone = pytz.timezone(tz)
-        app.job_queue.run_daily(
-            send_quote,
-            time=time(9, 0),
-            tzinfo=timezone,
-            name=f"quote_{chat_id}",
-            chat_id=chat_id,
-        )
-        app.job_queue.run_daily(
-            send_reflection,
-            time=time(12, 0),
-            days=(6,),  # воскресенье
-            tzinfo=timezone,
-            name=f"ref_{chat_id}",
-            chat_id=chat_id,
-        )
+    subscribers.discard(chat_id)
+    users_tz.pop(chat_id, None)
+    await update.message.reply_text('❌ Вы отписаны от рассылки.')
 
 # main
 def main():
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stop", stop))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, set_city))
+    token = os.getenv('BOT_TOKEN')
+    app = ApplicationBuilder().token(token).build()
 
-    # После инициализации добавим все расписания
-    app.job_queue.run_once(lambda ctx: schedule_jobs(app), when=1)
+    app.add_handler(CommandHandler('start', start))
+    app.add_handler(CommandHandler('stop', stop))
+    app.add_handler(MessageHandler(filters.Text(list(CITY_TZ.keys())), set_city))
+
+    # Расписание по TZ: цитаты в 9:00 ежедневно
+    app.job_queue.run_daily(send_quote, time=time(9,0), tzinfo=None)
+    # Рефлексия: воскресенье (6) в 12:00
+    app.job_queue.run_daily(send_reflection, time=time(12,0), days=(6,), tzinfo=None)
 
     app.run_polling()
 
 if __name__ == '__main__':
     main()
-```
