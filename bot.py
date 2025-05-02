@@ -62,9 +62,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[c] for c in cities]
     reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text(
-        "Пожалуйста, выберите ближайший к вам город из списка ниже, чтобы установить часовой пояс 👇:",
-        reply_markup=reply_markup,
-    )
+    f"✅ Готово!
+"
+    f"Теперь Вы будете получать одну мысль от стоиков каждое утро в 9:00 по времени города ({city}).
+
+"
+    "🔔⚠️ Убедитесь, что уведомления для этого бота включены, чтобы не пропустить сообщения."
+)
     logger.info(f"Prompted city selection for {chat_id}")
 
 # Handle city selection and subscribe
@@ -105,26 +109,17 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # /share command: send invite link
 async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    bot = await context.bot.get_me()
-    link = f"https://t.me/{bot.username}?start"
-    await update.message.reply_text(f"Поделитесь этим ботом: {link}")
-    logger.info(f"Share link sent to {update.effective_chat.id}")
+    # First message with gratitude and forwarding instructions
+    await update.message.reply_text(
+        "Спасибо, что решили поделиться этим ботом 🙏 :)
+"
+        "Просто перешлите это сообщение другу 👇"
+    )
+    # Second message with recommendation link
+    await update.message.reply_text(
+        "Привет! 👋 Хочу рекомендовать тебе классного бота. "
+        "Он ежедневно присылает одну стоическую мысль. "
+        "Мне очень понравилось: https://t.me/StoicTalesBot?start"
+    )
+    logger.info(f"Share messages sent to {update.effective_chat.id}")
 
-# Main function: build and run bot
-def main():
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler('start', start))
-    app.add_handler(CommandHandler('stop', stop))
-    app.add_handler(CommandHandler('help', help_cmd))
-    app.add_handler(CommandHandler('share', share))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, setcity))
-
-    # Schedule: daily quotes at 9:00
-    app.job_queue.run_daily(send_quote, time=time(hour=9, minute=0))
-    # Schedule: weekly reflection Sunday at 12:00
-    app.job_queue.run_daily(send_reflection, time=time(hour=12, minute=0), days=(6,))
-
-    app.run_polling()
-
-if __name__ == '__main__':
-    main()
