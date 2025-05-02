@@ -56,7 +56,6 @@ async def send_reflection(context: CallbackContext):
             logger.error(f"Error sending reflection to {chat_id}: {e}")
 
 # /start command: ask user to pick city
-# /start command: ask user to pick city
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     cities = ['Лермонтов', 'Батуми', 'Дюссельдорф', 'Киев', 'Барселона', 'Лиссабон']
@@ -66,7 +65,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Пожалуйста, выберите ближайший к вам город из списка ниже, чтобы установить часовой пояс 👇:",
         reply_markup=reply_markup
     )
-    logger.info(f"Prompted city selection for {chat_id}")"}]}(f"Prompted city selection for {chat_id}")(f"Prompted city selection for {chat_id}")
+    logger.info(f"Prompted city selection for {chat_id}")(f"Prompted city selection for {chat_id}")"}]}(f"Prompted city selection for {chat_id}")(f"Prompted city selection for {chat_id}")
 
 # Handle city selection and subscribe
 async def setcity(update: Update, context: ContextTypes.DEFAULT_TYPE):
