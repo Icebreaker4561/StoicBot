@@ -2,7 +2,6 @@ import os
 import logging
 import random
 from datetime import time
-import asyncio
 
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
@@ -22,13 +21,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Токен из ENV
+# Токен из переменной окружения
 TOKEN = os.getenv("BOT_TOKEN")
 
-# Хранилище подписчиков: chat_id -> city
-subscribers: dict[int,str] = {}
+# Подписчики: chat_id -> город
+subscribers: dict[int, str] = {}
 
-# Отправка ежедневной цитаты
+# Отправляем ежедневную цитату
 async def send_quote(context: ContextTypes.DEFAULT_TYPE):
     for chat_id, city in subscribers.items():
         quote = random.choice(QUOTES)
@@ -38,11 +37,11 @@ async def send_quote(context: ContextTypes.DEFAULT_TYPE):
                 quote,
                 parse_mode="HTML"
             )
-            logger.info(f"Sent daily quote to {chat_id} (city={city})")
+            logger.info(f"Quote sent to {chat_id} (city={city})")
         except Exception as e:
-            logger.error(f"Error sending daily quote to {chat_id}: {e}")
+            logger.error(f"Failed to send quote to {chat_id}: {e}")
 
-# Отправка еженедельной рефлексии
+# Отправляем еженедельную рефлексию
 REFLECTION_TEXT = (
     "🧘‍♂️ <b>Стоическая неделя</b>\n"
     "<i>Эти вопросы не для галочки. Найди несколько минут тишины...</i>\n\n"
@@ -60,9 +59,9 @@ async def send_reflection(context: ContextTypes.DEFAULT_TYPE):
                 REFLECTION_TEXT,
                 parse_mode="HTML"
             )
-            logger.info(f"Sent weekly reflection to {chat_id}")
+            logger.info(f"Reflection sent to {chat_id}")
         except Exception as e:
-            logger.error(f"Error sending reflection to {chat_id}: {e}")
+            logger.error(f"Failed to send reflection to {chat_id}: {e}")
 
 # /start — показываем меню выбора города
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -78,9 +77,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Пожалуйста, выберите ближайший к вам город из списка ниже, чтобы установить часовой пояс 👇",
         reply_markup=reply_markup
     )
-    logger.info(f"Prompted city selection for {chat_id}")
+    logger.info(f"/start prompted city selection for {chat_id}")
 
-# Ловим текстовое сообщение — это выбор города
+# Пользователь присылает название города
 async def setcity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     city = update.message.text.strip()
@@ -93,7 +92,7 @@ async def setcity(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Теперь Вы будете получать одну мысль от стоиков каждое утро в 9:00 по времени города ({city}).\n\n"
         "🔔⚠️ Убедитесь, что уведомления для этого бота включены, чтобы не пропустить сообщения."
     )
-    logger.info(f"Subscribed {chat_id} for city {city}")
+    logger.info(f"{chat_id} subscribed with city '{city}'")
 
 # /stop — отписка
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -101,7 +100,7 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id in subscribers:
         subscribers.pop(chat_id)
         await update.message.reply_text("❌ Вы отписаны от рассылки.")
-        logger.info(f"Unsubscribed {chat_id}")
+        logger.info(f"{chat_id} unsubscribed")
     else:
         await update.message.reply_text("Вы не были подписаны.")
 
@@ -113,7 +112,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/share — поделиться ботом\n"
         "/help — показать это сообщение"
     )
-    logger.info(f"Help requested by {update.effective_chat.id}")
+    logger.info(f"{update.effective_chat.id} requested help")
 
 # /share
 async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -126,29 +125,27 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Он ежедневно присылает одну стоическую мысль. "
         "Мне очень понравилось: https://t.me/StoicTalesBot?start"
     )
-    logger.info(f"Share messages sent to {update.effective_chat.id}")
+    logger.info(f"{update.effective_chat.id} invoked /share")
 
-# Точка входа
-async def main():
-    logger.info("Запуск приложения бота…")
+def main():
+    logger.info("Starting bot application")
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # Регистрируем хендлеры
+    # Регистрируем команды и хендлеры
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stop", stop))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("share", share))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, setcity))
 
-    # Планировщик: ежедневная цитата в 9:00
-    app.job_queue.run_daily(send_quote, time=time(hour=9, minute=0))
-    # Еженедельная рефлексия в субботу (день 6) в 12:00
+    # Планировщик
+    app.job_queue.run_daily(send_quote, time=time(hour=13, minute=30))
     app.job_queue.run_daily(send_reflection, time=time(hour=12, minute=0), days=(6,))
 
-    logger.info("Регистрируем задачи планировщика: ежедневная цитата и еженедельная рефлексия")
+    logger.info("Scheduled daily quote at 13:30 and weekly reflection on Saturday at 12:00")
 
-    # Запускаем polling
-    await app.run_polling()
+    # Запуск polling
+    app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
