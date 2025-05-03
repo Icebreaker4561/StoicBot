@@ -134,7 +134,7 @@ def main():
     # Ежедневная цитата в 12:55 каждый день
     app.job_queue.run_daily(
         send_quote,
-        time=time(hour=12, minute=55),
+        time=time(hour=12, minute=59),
         days=(0, 1, 2, 3, 4, 5, 6)
     )
     # Еженедельная рефлексия в воскресенье в 12:00
