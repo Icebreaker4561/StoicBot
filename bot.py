@@ -107,8 +107,8 @@ def main():
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("share", share))
 
-    # Планировщик: цитата каждый день в 11:15 ежедневно
-    app.job_queue.run_daily(send_quote, time=time(hour=11, minute=15), days=(0,1,2,3,4,5,6))
+    # Планировщик: цитата каждый день в 11:17 ежедневно
+    app.job_queue.run_daily(send_quote, time=time(hour=11, minute=17), days=(0,1,2,3,4,5,6))
 
     # Рефлексия каждое воскресенье в 12:00
     app.job_queue.run_daily(send_reflection, time=time(hour=12, minute=0), days=(6,))
