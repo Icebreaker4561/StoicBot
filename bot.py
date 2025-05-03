@@ -7,86 +7,115 @@ from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
-    filters,
     ContextTypes,
+    filters,
 )
+from stoic_quotes_100 import QUOTES
 
-from stoic_quotes_100 import QUOTES  # ваш список цитат
-
-# ——— Настройка логирования ———
+# Logging setup
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
 
+# Bot token from environment
 TOKEN = os.getenv("BOT_TOKEN")
 
-# Здесь будем хранить chat_id → выбранный город (потом — и TZ)
-subscribers: dict[int, str] = {}
+# In-memory subscribers: chat_id -> city
+subscribers = {}
 
-# ——— Функции рассылки ———
-
+# Send a random quote
 async def send_quote(context: ContextTypes.DEFAULT_TYPE):
-    for chat_id in subscribers:
+    for chat_id, city in subscribers.items():
         quote = random.choice(QUOTES)
-        await context.bot.send_message(chat_id, quote)
+        try:
+            await context.bot.send_message(
+                chat_id,
+                f"<b>Стоическая мысль:</b>\n{quote}",
+                parse_mode="HTML",
+            )
+            logger.info(f"Sent quote to {chat_id} ({city})")
+        except Exception as e:
+            logger.error(f"Error sending quote to {chat_id}: {e}")
+
+# Weekly reflection text
+REFLECTION_TEXT = (
+    "🧘‍♂️ <b>Стоическая неделя</b>\n"
+    "Эти вопросы не для галочки. Найдите 5–10 минут для честной рефлексии:\n"
+    "1️⃣ В каких ситуациях я позволил эмоциям взять верх над разумом?\n"
+    "2️⃣ Какие мои действия соответствовали стоическим ценностям, а какие нет?\n"
+    "3️⃣ Что из того, что я считал важным, будет важно через год?\n"
+    "4️⃣ Какие возможности помочь другим я упустил?\n"
+    "5️⃣ Какие трудности я смог превратить в рост, а чему еще нужно научиться?"
+)
 
 async def send_reflection(context: ContextTypes.DEFAULT_TYPE):
-    text = (
-        "🧘‍♂️ *Стоическая неделя*\n"
-        "_Эти вопросы не для галочки, найдите минуту тишины_\n\n"
-        "1️⃣ Где эмоции победили разум?\n"
-        "2️⃣ Что шло вразрез стоическим ценностям?\n"
-        "3️⃣ Что действительно важно через год?\n"
-        "4️⃣ Кого я мог поддержать, но не сделал этого?\n"
-        "5️⃣ Какие трудности стали вашим ростом?"
-    )
-    for chat_id in subscribers:
-        await context.bot.send_message(chat_id, text, parse_mode="Markdown")
+    for chat_id, city in subscribers.items():
+        try:
+            await context.bot.send_message(
+                chat_id,
+                REFLECTION_TEXT,
+                parse_mode="HTML",
+            )
+            logger.info(f"Sent reflection to {chat_id} ({city})")
+        except Exception as e:
+            logger.error(f"Error sending reflection to {chat_id}: {e}")
 
-# ——— Обработчики команд ———
-
+# /start: ask to choose city
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    cities = ["Лермонтов","Батуми","Дюссельдорф","Киев","Барселона","Лиссабон"]
-    kb = [[c] for c in cities]
+    cities = ['Лермонтов','Батуми','Дюссельдорф','Киев','Барселона','Лиссабон']
+    keyboard = [[c] for c in cities]
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text(
         "Пожалуйста, выберите ближайший к вам город из списка ниже, чтобы установить часовой пояс 👇",
-        reply_markup=ReplyKeyboardMarkup(kb, one_time_keyboard=True, resize_keyboard=True),
+        reply_markup=reply_markup,
     )
+    logger.info(f"Prompted city selection for {chat_id}")
+
+# /setcity or city name handler
+def is_city(text: str):
+    return text in ['Лермонтов','Батуми','Дюссельдорф','Киев','Барселона','Лиссабон']
 
 async def setcity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     city = update.message.text.strip()
-    if city not in ["Лермонтов","Батуми","Дюссельдорф","Киев","Барселона","Лиссабон"]:
-        return await update.message.reply_text("Город не распознан, попробуйте ещё раз.")
+    if not is_city(city):
+        return
     subscribers[chat_id] = city
     await update.message.reply_text(
         "✅ Готово!\n"
-        "Теперь Вы будете получать одну мысль от стоиков каждое утро в 11:05 по времени города "
-        f"({city}).\n\n"
-        "🔔 Убедитесь, что уведомления для этого бота включены, чтобы не пропустить сообщения."
+        f"Теперь вы будете получать одну мысль от стоиков каждое утро в 11:25 по времени города {city}.\n\n"
+        "🔔⚠️ Убедитесь, что уведомления для этого бота включены, чтобы не пропустить сообщения."
     )
+    logger.info(f"Subscribed {chat_id} for city {city}")
+
+# /stop: unsubscribe
+def unregister(chat_id: int):
+    return subscribers.pop(chat_id, None)
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    if subscribers.pop(chat_id, None):
+    if unregister(chat_id):
         await update.message.reply_text("❌ Вы отписаны от рассылки.")
+        logger.info(f"Unsubscribed {chat_id}")
     else:
         await update.message.reply_text("Вы не были подписаны.")
 
+# /help
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "/start — подписаться и выбрать город\n"
-        "/setcity — поменять город\n"
         "/stop — отписаться\n"
-        "/share — рассказать о боте\n"
-        "/help — справка"
+        "/help — помощь\n"
+        "/share — поделиться ботом"
     )
 
+# /share
 async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Спасибо, что решили поделиться этим ботом 🙏 :)\n"
+        "Спасибо, что решили поделиться этим ботом 🙏 :)\n"  
         "Просто перешлите это сообщение другу 👇"
     )
     await update.message.reply_text(
@@ -94,27 +123,18 @@ async def share(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Он ежедневно присылает одну стоическую мысль. "
         "Мне очень понравилось: https://t.me/StoicTalesBot_dev_bot?start"
     )
+    logger.info(f"Share prompt sent to {update.effective_chat.id}")
 
-# ——— Точка входа ———
-
-def main():
+# Main
+if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).build()
-
-    # Регистрация команд
+    # Handlers
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("setcity", setcity))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, setcity))
     app.add_handler(CommandHandler("stop", stop))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("share", share))
-
-    # Планировщик: цитата каждый день в 11:17 ежедневно
-    app.job_queue.run_daily(send_quote, time=time(hour=11, minute=17), days=(0,1,2,3,4,5,6))
-
-    # Рефлексия каждое воскресенье в 12:00
+    # Schedule jobs: daily at 11:05 and weekly Sunday at 12:00
+    app.job_queue.run_daily(send_quote, time=time(hour=11, minute=25), days=(0,1,2,3,4,5,6))
     app.job_queue.run_daily(send_reflection, time=time(hour=12, minute=0), days=(6,))
-
-    # Запуск поллинга
     app.run_polling()
-
-if __name__ == "__main__":
-    main()
