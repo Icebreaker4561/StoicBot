@@ -1,4 +1,4 @@
-```python
+python
 import os
 import logging
 import random
@@ -89,7 +89,7 @@ async def setcity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ежедневная цитата в 12:35 по местному времени
     context.job_queue.run_daily(
         send_quote,
-        time=time(hour=12, minute=35, tzinfo=tz),
+        time=time(hour=12, minute=40, tzinfo=tz),
         days=(0,1,2,3,4,5,6),
         context=chat_id,
         name=f"quote_{chat_id}",
@@ -105,7 +105,7 @@ async def setcity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Подтверждение подписки
     text = (
         "✅ Готово!\n"
-        f"Теперь Вы будете получать одну мысль от стоиков каждое утро в 12:35 по времени города {city}.\n\n"
+        f"Теперь Вы будете получать одну мысль от стоиков каждое утро в 12:40 по времени города {city}.\n\n"
         "🔔⚠️ Убедитесь, что уведомления для этого бота включены, чтобы не пропустить сообщения."
     )
     await update.message.reply_text(text)
@@ -155,4 +155,3 @@ async def main():
 if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
-```
